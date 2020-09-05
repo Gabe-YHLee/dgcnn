@@ -56,7 +56,6 @@ def get_graph_feature(x, k=20, idx=None):
 class PointNet(nn.Module):
     def __init__(self, args, output_channels=40):
         super(PointNet, self).__init__()
-        self.args = args
         self.conv1 = nn.Conv1d(3, 64, kernel_size=1, bias=False)
         self.conv2 = nn.Conv1d(64, 64, kernel_size=1, bias=False)
         self.conv3 = nn.Conv1d(64, 64, kernel_size=1, bias=False)
@@ -71,14 +70,22 @@ class PointNet(nn.Module):
         self.bn6 = nn.BatchNorm1d(512)
         self.dp1 = nn.Dropout()
         self.linear2 = nn.Linear(512, output_channels)
-
+    
+    def local_feature(self, x):
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = F.relu(self.bn4(self.conv4(x)))
+        x = F.relu(self.bn5(self.conv5(x)))
+        return x
+    
     def forward(self, x):
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))
         x = F.relu(self.bn4(self.conv4(x)))
         x = F.relu(self.bn5(self.conv5(x)))
-        x = F.adaptive_max_pool1d(x, 1).squeeze()
+        x = F.adaptive_max_pool1d(x, 1).squeeze(2)
         x = F.relu(self.bn6(self.linear1(x)))
         x = self.dp1(x)
         x = self.linear2(x)
@@ -119,7 +126,30 @@ class DGCNN(nn.Module):
         self.bn7 = nn.BatchNorm1d(256)
         self.dp2 = nn.Dropout(p=args.dropout)
         self.linear3 = nn.Linear(256, output_channels)
+    
+    def local_feature(self, x):
+        batch_size = x.size(0)
+        x = get_graph_feature(x, k=self.k)
+        x = self.conv1(x)
+        x1 = x.max(dim=-1, keepdim=False)[0]
 
+        x = get_graph_feature(x1, k=self.k)
+        x = self.conv2(x)
+        x2 = x.max(dim=-1, keepdim=False)[0]
+
+        x = get_graph_feature(x2, k=self.k)
+        x = self.conv3(x)
+        x3 = x.max(dim=-1, keepdim=False)[0]
+
+        x = get_graph_feature(x3, k=self.k)
+        x = self.conv4(x)
+        x4 = x.max(dim=-1, keepdim=False)[0]
+
+        x = torch.cat((x1, x2, x3, x4), dim=1)
+
+        x = self.conv5(x)
+        return x
+    
     def forward(self, x):
         batch_size = x.size(0)
         x = get_graph_feature(x, k=self.k)
